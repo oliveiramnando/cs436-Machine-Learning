@@ -20,6 +20,7 @@ class LinearRegressionModel(nn.Module):
         return self.linear(x) # want 1d output
 
 # ------------------ No Feature Learning and No Dynamic Learning ------------------ #
+print("------------No Feature Scaling------------")
 YEARS_recentered = YEARS.astype(np.float32) - 2000.0 
 X_raw = torch.tensor(YEARS_recentered, dtype=torch.float32) # making tensor
 yMin_raw = torch.tensor(yMin, dtype=torch.float32)
@@ -40,19 +41,19 @@ def train_raw(model, X, y, lr=1e-3, epochs=10000):
     
     losses = []
     for e in range(epochs):
-        yhat = model(x)
-        resid = yhat - t 
-        loss = float((resid.pow(2).mean()).item())
+        yhat = model(x) # predictions
+        resid = yhat - t # difference between predictions and true value
+        loss = float(((yhat - t) ** 2).mean().item()) # mse
         losses.append(loss)
 
-
+        # gradient caluculations
         dw = float((2.0 / n) * (resid * x).sum().item()) 
         db = float((2.0 / n) * resid.sum().item())
 
         # update module params 
         with torch.no_grad():
-            model.linear.weight -= lr * torch.tensor([[dw]], dtype=torch.float32)
-            model.linear.bias   -= lr * torch.tensor([db],    dtype=torch.float32)
+            model.linear.weight -= lr * torch.tensor([[dw]], dtype=torch.float32) # update formula using the gradient calculations
+            model.linear.bias -= lr * torch.tensor([db], dtype=torch.float32)
 
         if (e+1) % 20 == 0:
             print(f"Epoch [{e+1}/{epochs}] loss={loss:.4f} w={model.linear.weight.item():.6f} b={model.linear.bias.item():.3f}")
@@ -89,17 +90,26 @@ wMax = wMax_c
 bMax = bMax_c - 2000.0 * wMax_c
  
 #------ predict and plot ------ #
+predict_years = np.arange(2012, 2019).reshape(-1, 1)
+predict_years_centered = predict_years.astype(np.float32) - 2000.0 
+pred_X = torch.tensor(predict_years_centered, dtype=torch.float32)
+
 modelMin_raw.eval()
 modelMax_raw.eval()
 with torch.no_grad():
     yMin_fit_raw = modelMin_raw(X_raw).numpy()
     yMax_fit_raw = modelMax_raw(X_raw).numpy()
 
+    yMin_preds = modelMin_raw(pred_X).numpy()
+    yMax_preds = modelMax_raw(pred_X).numpy() 
+
 plt.scatter(YEARS, yMin, label='Min')
 plt.scatter(YEARS, yMax, label='Max')
 
 plt.plot(YEARS, yMin_fit_raw, label='MinFitLine', linewidth = 2)
 plt.plot(YEARS, yMax_fit_raw, label='MaxFitLine', linewidth = 2)
+plt.scatter(predict_years, yMin_preds, marker='v', label='Min Pred (2012–2018)')
+plt.scatter(predict_years, yMax_preds, marker='v', label='Max Pred (2012–2018)')
 
 plt.legend()
 plt.xlabel('Years')
@@ -117,6 +127,7 @@ plt.legend()
 plt.show()
 
 # ------------------ Feature Scaling and Dynamic Learning ------------------ #
+print("------------Feature Scaling and Dynamic Learning------------")
 # now we have to turn the data into tensors; common practice is to normalize data
 x_mean, x_std = YEARS.mean(), YEARS.std()
 X_normalized = (YEARS - x_mean) / x_std
@@ -147,9 +158,9 @@ def train_DL(model, X, y, lr=1e-1, epochs=100):
     losses = []
 
     for e in range(epochs):
-        yhat = model(x)
-        resid = yhat - t 
-        loss = float((resid.pow(2).mean()).item())
+        yhat = model(x) # predictions
+        resid = yhat - t # difference between predictions and true value
+        loss = float(((yhat - t) ** 2).mean().item()) # mse
         losses.append(loss)
 
         dw = float((2.0 / n) * (resid * x).sum().item()) 
@@ -158,7 +169,7 @@ def train_DL(model, X, y, lr=1e-1, epochs=100):
         # param update
         with torch.no_grad():
             model.linear.weight -= curr_lr * torch.tensor([[dw]], dtype=torch.float32)
-            model.linear.bias   -= curr_lr * torch.tensor([db],    dtype=torch.float32)
+            model.linear.bias -= curr_lr * torch.tensor([db],    dtype=torch.float32)
 
         if (e + 1) % 20 == 0:
             curr_lr *= gamma
@@ -217,6 +228,7 @@ plt.scatter(YEARS, yMax, label='Max')
 
 plt.plot(YEARS, yMin_fit_fs, label='MinFitLine', linewidth = 2)
 plt.plot(YEARS, yMax_fit_fs, label='MaxFitLine', linewidth = 2)
+
 
 plt.scatter(predict_years, yMin_preds, marker='v', label='Min Pred (2012–2018)')
 plt.scatter(predict_years, yMax_preds, marker='v', label='Max Pred (2012–2018)')
