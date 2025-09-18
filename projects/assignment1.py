@@ -21,25 +21,42 @@ class LinearRegressionModel(nn.Module):
 
 # ------------------ No Feature Learning and No Dynamic Learning ------------------ #
 YEARS_recentered = YEARS.astype(np.float32) - 2000.0 
-# YEARS_recentered = YEARS.astype(np.float32)
 X_raw = torch.tensor(YEARS_recentered, dtype=torch.float32) # making tensor
 yMin_raw = torch.tensor(yMin, dtype=torch.float32)
 yMax_raw = torch.tensor(yMax, dtype=torch.float32)
     
 #------ training------#
 def train_raw(model, X, y, lr=1e-3, epochs=10000):
-    criterion = nn.MSELoss()
-    optimizer = optim.SGD(model.parameters(), lr=lr) # replace with something else
+    model.train()
+    # ensure shape is (n,1)
+    x = X
+    t = y
+    n = x.shape[0]
+
+    # initialize params
+    with torch.no_grad():
+        model.linear.weight.zero_()
+        model.linear.bias.fill_(t.mean().item()) 
+    
     losses = []
     for e in range(epochs):
-        pred = model(X) 
-        loss = criterion(pred, y) 
-        optimizer.zero_grad() # cant use this
-        loss.backward() # or this
-        optimizer.step() # or this 
-        losses.append(loss.item())
-        if e % 10 == 0:
-            print(f"Epoch [{e+1}/{epochs}], loss: {loss.item():.4f}")
+        yhat = model(x)
+        resid = yhat - t 
+        loss = float((resid.pow(2).mean()).item())
+        losses.append(loss)
+
+
+        dw = float((2.0 / n) * (resid * x).sum().item()) 
+        db = float((2.0 / n) * resid.sum().item())
+
+        # update module params 
+        with torch.no_grad():
+            model.linear.weight -= lr * torch.tensor([[dw]], dtype=torch.float32)
+            model.linear.bias   -= lr * torch.tensor([db],    dtype=torch.float32)
+
+        if (e+1) % 20 == 0:
+            print(f"Epoch [{e+1}/{epochs}] loss={loss:.4f} w={model.linear.weight.item():.6f} b={model.linear.bias.item():.3f}")
+
     return losses
 
 in_features = 1
@@ -115,27 +132,41 @@ yMax_tensor = torch.tensor(y_normalized, dtype=torch.float32)
 
 #------ training------#
 def train_DL(model, X, y, lr=1e-1, epochs=100):
-    criterion = nn.MSELoss()
-    optimizer = optim.SGD(model.parameters(), lr=lr)
+    model.train()
+    x = X    
+    t = y 
+    n = x.shape[0]
 
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.5) # halves LR every 1000 epochs (tweak step_size/gamma)
+    gamma = 0.5
 
+    with torch.no_grad():
+        model.linear.weight.zero_()
+        model.linear.bias.fill_(t.mean().item())
+
+    curr_lr = lr
     losses = []
+
     for e in range(epochs):
-        pred = model(X) 
-        loss = criterion(pred, y) 
+        yhat = model(x)
+        resid = yhat - t 
+        loss = float((resid.pow(2).mean()).item())
+        losses.append(loss)
 
-        optimizer.zero_grad()
-        loss.backward()
+        dw = float((2.0 / n) * (resid * x).sum().item()) 
+        db = float((2.0 / n) * resid.sum().item()) 
 
-        optimizer.step()
-        scheduler.step()
+        # param update
+        with torch.no_grad():
+            model.linear.weight -= curr_lr * torch.tensor([[dw]], dtype=torch.float32)
+            model.linear.bias   -= curr_lr * torch.tensor([db],    dtype=torch.float32)
 
-        losses.append(loss.item())
+        if (e + 1) % 20 == 0:
+            curr_lr *= gamma
 
-        if e % 10 == 0:
-            curr_lr = scheduler.get_last_lr()[0]
-            print(f"Epoch [{e+1}/{epochs}], loss: {loss.item():.4f}, currrent lr: {curr_lr:.6g}")
+        if (e + 1) % 20 == 0:
+            print(f"Epoch [{e+1}/{epochs}] loss={loss:.5f} lr={curr_lr:.6g} "
+                  f"w={model.linear.weight.item():.6f} b={model.linear.bias.item():.6f}")
+
     return losses
 
 in_features = 1
